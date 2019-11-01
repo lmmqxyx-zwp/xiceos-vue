@@ -1,0 +1,4 @@
+#exclusions
+
+.idea/
+.node_modules/
