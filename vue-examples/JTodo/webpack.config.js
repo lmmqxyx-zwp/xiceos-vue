@@ -3,6 +3,7 @@ const path = require('path');
 const VueLoaderPlugin = require('vue-loader/lib/plugin');
 const HTMLPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
+const ExtractPlugin = require('extract-text-webpack-plugin')
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -12,30 +13,18 @@ const config = {
         path: path.join(__dirname, 'src/index.js')
     },
     output: {
-        filename: "bundle.js",
+        filename: "bundle.[hash:8].js",
         path: path.join(__dirname, 'dist')
     },
     module: {
         rules: [
             {
                 test: /\.vue$/,
-                loader: 'vue-loader'
+                loader: 'vue-loader',
             },
             {
                 test: /\.jsx$/,
                 loader: 'babel-loader'
-            },
-            {
-                // css-loader不仅可以处理项目中的css文件
-                // 还可以处理项目中的 .vue 组件中的css代码
-                // 但是 .vue 文件中的代码需要使用 lang = css 进行执行
-                // 不然的就会报错
-                // 默认不写时是 css
-                test:/\.css$/,
-                use: [
-                    'styles-loader',
-                    'css-loader'
-                ]
             },
             {
                 test: /\.(gif|jpg|jpeg|png|svg|ico)$/,
@@ -48,33 +37,12 @@ const config = {
                         // 只有小于1024的图片才能转换成BASE64代码打包在代码中
                         // 其他的会生成相关的名称的文件，在name中进行了配置
                         options: {
-                            limit: 1024,
+                            limit: 102400,
                             name: '[name].[ext]'
                         }
                     }
                 ]
             },
-            {
-                // stylus
-                // 一层一层网上处理，每个loader只处理自己关心的那块代码
-                // stylus-loader只处理stylus文件
-                // 需要注意的是在此处配置的test中必须把对应的vue组件中的lang中的也配置在里面
-                // 否则会出错
-                // 或者在vue组件中的style中配置lang=styl，但是这样有可能导致IDE不认识报错，但是运行没有问题
-                test: /\.(styl|stylus)$/,
-                use: [
-                    'styles-loader',
-                    'css-loader',
-                    // 编译效率增高
-                    {
-                        loader: "postcss-loader",
-                        options: {
-                            sourceMap: true
-                        }
-                    },
-                    'stylus-loader'
-                ]
-            }
         ]
     },
     plugins: [
@@ -97,6 +65,22 @@ if (isDev) {
     // 为了映射编译之后的代码，方便页面调试
     config.devtool = '#cheap-module-eval-source-map';
 
+    // 开发配置项
+    config.module.rules.push({
+        test: /\.(styl|stylus|css)$/,
+        use: [
+            'style-loader',
+            'css-loader',
+            {
+                loader: 'postcss-loader',
+                options: {
+                    sourceMap: true,
+                }
+            },
+            'stylus-loader'
+        ]
+    })
+
     // webpack 2 之后加入
     config.devServer = {
         port: 8000,
@@ -116,6 +100,55 @@ if (isDev) {
         new webpack.HotModuleReplacementPlugin(),
         new webpack.NoEmitOnErrorsPlugin()
     )
+} else {
+    config.entry = {
+        app: path.join(__dirname, 'src/index.js'),
+        vendor: ['vue']
+    }
+    config.output.filename = '[name].[chunkhash:8].js'
+    config.module.rules.push(
+        {
+            test: /\.(styl|stylus|css)$/,
+            use: ExtractPlugin.extract({
+                fallback: 'style-loader',
+                use: [
+                    'css-loader',
+                    {
+                        loader: 'postcss-loader',
+                        options: {
+                            sourceMap: true,
+                        }
+                    },
+                    'stylus-loader'
+                ]
+            })
+        },
+    )
+    config.plugins.push(
+        // 注意 webpack 之间的版本差异
+        new ExtractPlugin('styles.[chunkhash:8].css'),
+    )
+
+    config.optimization = {
+        splitChunks: {
+            cacheGroups: {
+                commons: {
+                    chunks: 'initial',
+                    minChunks: 2,
+                    maxInitialRequests: 5,
+                    minSize: 0
+                },
+                vendor: {
+                    test: /node_modules/,
+                    chunks: 'initial',
+                    name: 'vendor',
+                    priority: 10,
+                    enforce: true
+                }
+            }
+        },
+        runtimeChunk: true
+    }
 }
 
 module.exports = config;
